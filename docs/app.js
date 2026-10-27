@@ -4,6 +4,7 @@ const PYODIDE_URL = "https://cdn.jsdelivr.net/pyodide/v0.26.4/full/";
 const PDF_WORKER = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
 
 let py = null, api = null, analysis = null;
+const overridesState = {};
 let pdfWords = null;                       // positioned words when the vendor file is a PDF
 
 const setStatus = (el, msg, err) => { el.textContent = msg || ""; el.classList.toggle("err", !!err); };
@@ -166,31 +167,74 @@ function ventCell(u) {
 
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 
+function actionText(u) {
+  const o = overridesState[u.i] || {};
+  const msgs = [];
+  if (u.vendor && o.vendor === undefined) {
+    if (u.vendor.best === null) msgs.push("No vendor match – choose one");
+    else msgs.push(u.vendor.score < 1 ? "Check vendor match (fuzzy " + u.vendor.score + ")" : "Confirm vendor match");
+  }
+  if (o.vent === undefined) {
+    if (!u.vent.hits.length) msgs.push("No ventilation match – choose one");
+    else msgs.push(u.vent.score < 1 ? "Check ventilation match (fuzzy " + u.vent.score + ")" : "Confirm ventilation match");
+  }
+  return msgs;
+}
+
+const reviewed = new Set();
+
 function renderReview() {
+  reviewed.clear();
   const hasVendor = analysis.units.some((u) => u.vendor);
-  let head = "<tr><th>Unit</th><th>Location</th><th>Area</th><th>Calc kW</th><th>Flow L/s</th>";
+  let head = '<tr><th class="chk"><input type="checkbox" id="allOk" title="Mark all as reviewed"></th><th>Action required</th><th>Unit</th><th>Location</th><th>Area</th><th>Calc kW</th><th>Flow L/s</th>';
   if (hasVendor) head += "<th>Vendor match</th>";
   head += "<th>Ventilation match</th></tr>";
   let rows = "";
   for (const u of analysis.units) {
-    rows += `<tr><td>${esc(u.ref)}</td><td>${esc(u.zone)}</td>` +
+    rows += `<tr class="review" data-row="${u.i}"><td class="chk"><input type="checkbox" class="ok" data-u="${u.i}" title="Mark as reviewed"></td>` +
+      `<td class="action">${actionText(u).map((m) => `<b>${esc(m)}</b>`).join("")}</td>` +
+      `<td>${esc(u.ref)}</td><td>${esc(u.zone)}</td>` +
       `<td class="num">${fmt(u.area, 1)}</td><td class="num">${fmt(u.total)}</td><td class="num">${fmt(u.flow, 0)}</td>` +
       (hasVendor ? vendorCell(u) : "") + ventCell(u) + "</tr>";
   }
   $("table").innerHTML = head + rows;
-  const noVent = analysis.units.filter((u) => !u.vent.hits.length).length;
-  $("summary").textContent = `${analysis.units.length} units · vent spaces: ${analysis.vent_count}` +
-    (noVent ? ` · ${noVent} without ventilation match` : "") +
-    (hasVendor ? ` · vendor rows: ${analysis.vendor_count}` : " · no vendor file");
+  updateSummary();
   $("review").classList.remove("hidden");
 }
 
-const overridesState = {};
+function setReviewed(i, on) {
+  const tr = document.querySelector(`tr[data-row="${i}"]`);
+  if (!tr) return;
+  tr.classList.toggle("review", !on);
+  tr.querySelector("input.ok").checked = on;
+  const act = tr.querySelector("td.action");
+  act.innerHTML = on ? "Reviewed" : actionText(analysis.units[i]).map((m) => `<b>${esc(m)}</b>`).join("");
+  if (on) reviewed.add(i); else reviewed.delete(i);
+}
+
+function updateSummary() {
+  const hasVendor = analysis.units.some((u) => u.vendor);
+  const noVent = analysis.units.filter((u) => !u.vent.hits.length && (overridesState[u.i] || {}).vent === undefined).length;
+  const left = analysis.units.length - reviewed.size;
+  $("summary").textContent = `${analysis.units.length} units · ${left} still to review` +
+    (noVent ? ` · ${noVent} without ventilation match` : "") + ` · vent spaces: ${analysis.vent_count}` +
+    (hasVendor ? ` · vendor rows: ${analysis.vendor_count}` : " · no vendor file");
+}
+
 $("table").addEventListener("change", (e) => {
   const s = e.target;
   if (s.tagName !== "SELECT") return;
   const o = (overridesState[s.dataset.u] = overridesState[s.dataset.u] || {});
   if (s.value === "") delete o[s.dataset.k]; else o[s.dataset.k] = parseInt(s.value, 10);
+  setReviewed(parseInt(s.dataset.u, 10), true);      // picking a value counts as reviewing the row
+  updateSummary();
+});
+$("table").addEventListener("click", (e) => {
+  const c = e.target;
+  if (c.tagName !== "INPUT" || c.type !== "checkbox") return;
+  if (c.id === "allOk") analysis.units.forEach((u) => setReviewed(u.i, c.checked));
+  else if (c.classList.contains("ok")) setReviewed(parseInt(c.dataset.u, 10), c.checked);
+  updateSummary();
 });
 $("generate").addEventListener("click", async () => {
   const st = $("genStatus");

@@ -96,6 +96,66 @@ def _cached(cells, col, value, is_text=False):
                 c[2] += f"<v>{fmt_num(value)}</v>"
 
 
+_WHITE = re.compile(r'theme="0"|rgb="FFFFFFFF"|indexed="9"')
+
+
+def _block(xml, tag):
+    m = re.search(rf"<{tag} count=\"(\d+)\"([^>]*)>(.*?)</{tag}>", xml, re.S)
+    return m
+
+
+def _whiten_styles(styles_xml, used):
+    """Clone the given cellXfs with a white background (and black text where it was white).
+
+    The coloured fills of the reference (yellow / green / blue) only show where the
+    data comes from; the generated sheet should not carry them.  -> (xml, {old: new}).
+    """
+    fm, fo, xm = _block(styles_xml, "fills"), _block(styles_xml, "fonts"), _block(styles_xml, "cellXfs")
+    fills = re.findall(r"<fill>.*?</fill>|<fill/>", fm.group(3), re.S)
+    fonts = re.findall(r"<font>.*?</font>|<font/>", fo.group(3), re.S)
+    xfs = re.findall(r"<xf[^>]*?(?:/>|>.*?</xf>)", xm.group(3), re.S)
+    white_fill = len(fills)
+    new_fills = ['<fill><patternFill patternType="solid"><fgColor rgb="FFFFFFFF"/><bgColor indexed="64"/></patternFill></fill>']
+    new_fonts, new_xfs, mapping, font_map = [], [], {}, {}
+
+    def coloured(fid):
+        f = fills[fid]
+        if 'patternType="solid"' not in f:
+            return False
+        fg = re.search(r"<fgColor[^>]*>", f)
+        return bool(fg) and not _WHITE.search(fg.group(0))
+
+    for st in sorted(used, key=int):
+        x = xfs[int(st)]
+        fid = int(re.search(r'fillId="(\d+)"', x).group(1))
+        if not coloured(fid):
+            continue
+        nx = re.sub(r'fillId="\d+"', f'fillId="{white_fill}"', x, count=1)
+        if "applyFill" not in nx.split(">")[0]:
+            nx = nx.replace("<xf ", '<xf applyFill="1" ', 1)
+        fnt = int(re.search(r'fontId="(\d+)"', x).group(1))
+        if re.search(r"<color [^>]*(?:theme=\"0\"|rgb=\"FFFFFFFF\"|indexed=\"9\")", fonts[fnt]):
+            if fnt not in font_map:
+                font_map[fnt] = len(fonts) + len(new_fonts)
+                new_fonts.append(re.sub(r"<color [^>]*/>", '<color rgb="FF000000"/>', fonts[fnt]))
+            nx = re.sub(r'fontId="\d+"', f'fontId="{font_map[fnt]}"', nx, count=1)
+            if "applyFont" not in nx.split(">")[0]:
+                nx = nx.replace("<xf ", '<xf applyFont="1" ', 1)
+        mapping[st] = str(len(xfs) + len(new_xfs))
+        new_xfs.append(nx)
+
+    def put(xml, m, tag, items, count):
+        return xml[: m.start()] + f'<{tag} count="{count}"{m.group(2)}>' + m.group(3) + "".join(items) + f"</{tag}>" + xml[m.end():]
+
+    out = styles_xml
+    # replace from the end so earlier match offsets stay valid
+    for m, tag, items, total in sorted(
+            [(fm, "fills", new_fills, len(fills) + 1), (fo, "fonts", new_fonts, len(fonts) + len(new_fonts)),
+             (xm, "cellXfs", new_xfs, len(xfs) + len(new_xfs))], key=lambda t: -t[0].start()):
+        out = put(out, m, tag, items, total)
+    return out, mapping
+
+
 def _row_xml(r, attrs_s, cells):
     body = "".join(_cell_xml(c, r, a, i) for c, a, i in cells)
     return f'<row r="{r}"{attrs_s}>{body}</row>'
@@ -125,6 +185,15 @@ def fill(template, rows, header=None, hide_empty=True):
     files = {n: zin.read(n) for n in zin.namelist()}
     sheet = files[SHEET].decode("utf-8")
 
+    used = set()
+    for m in _ROW.finditer(sheet):
+        if FIRST <= int(m.group(1)) <= LAST:
+            for c in _parse_cells(m.group(3)):
+                if 3 <= col_index(c[0]) <= 31 and "s" in c[1]:
+                    used.add(c[1]["s"])
+    styles, smap = _whiten_styles(files["xl/styles.xml"].decode("utf-8"), used)
+    files["xl/styles.xml"] = styles.encode("utf-8")
+
     hdr = {}
     for k, ref in HEADER_CELLS.items():
         if (header or {}).get(k):
@@ -142,6 +211,9 @@ def fill(template, rows, header=None, hide_empty=True):
         in_data = FIRST <= r <= LAST
         data = rows[r - FIRST] if in_data and r - FIRST < len(rows) else None
         if in_data:
+            for c in cells:
+                if 3 <= col_index(c[0]) <= 31 and c[1].get("s") in smap:
+                    c[1]["s"] = smap[c[1]["s"]]
             for col in INPUT_COLS:
                 _set(cells, col, (data or {}).get(col))
             if data:

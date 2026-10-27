@@ -7,12 +7,12 @@
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
-<header>
-  <h1>FCU Excel Combiner</h1>
+<header class="topbar"><div class="inner">
+  <h1>FCU Excel <span>Combiner</span></h1>
   <p>Merge the FCU schedule, ventilation calculation and vendor report into the
      <em>Summary of Thermal Load Calculation</em> workbook. Everything runs in your browser; no file is uploaded.</p>
   <div id="engine" class="pill">Loading Python engine…</div>
-</header>
+</div></header>
 
 <main>
   <section class="card">
@@ -86,8 +86,9 @@
 
   <section class="card hidden" id="review">
     <h2>4 · Review matches</h2>
-    <p class="hint">Every unit is pre-filled with the closest match found. Check each row and change it from the
-      dropdown if it is wrong (“none” leaves the values blank).</p>
+    <p class="hint">Every unit is pre-filled with the closest match found and highlighted until you review it.
+      Change the match from the dropdown if it is wrong (“none” leaves the values blank), or tick the box
+      at the start of the row to confirm it. Changing a dropdown also marks the row as reviewed.</p>
     <div class="toolbar"><span id="summary"></span></div>
     <div class="tablewrap"><table id="table"></table></div>
     <div class="actions">

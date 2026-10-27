@@ -141,3 +141,17 @@ def test_vendor_pdf_words():
     assert g.flow_ls == pytest.approx(923 / 3.6) and g.power_kw == pytest.approx(0.051)
     with pytest.raises(ValueError):
         vendor_pdf.parse_words(_words([["nothing", "useful"]]))
+
+
+@needs_inputs
+def test_data_cells_are_white_and_readable(session):
+    data, _ = session.build({"pct": 5})
+    ws = openpyxl.load_workbook(io.BytesIO(data)).active
+    for c in ("D13", "G13", "J13", "L13", "M13", "N13", "S13", "T13", "AE13", "D300"):
+        f = ws[c].fill
+        assert f.fill_type is None or (f.fgColor.type == "rgb" and f.fgColor.rgb == "FFFFFFFF") or f.fgColor.type == "theme", c
+        col = ws[c].font.color
+        assert col is None or col.type != "rgb" or col.rgb != "FFFFFFFF", c
+    assert ws["D13"].fill.fill_type == "solid" and ws["D13"].fill.fgColor.rgb == "FFFFFFFF"
+    assert ws["D9"].fill.fgColor.rgb != "FFFFFFFF"          # header colours untouched
+    assert not ws["D13"].protection.locked and ws["L13"].protection.locked
