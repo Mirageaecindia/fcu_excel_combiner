@@ -11,10 +11,15 @@ def norm(s):
     return re.sub(r"\s+", " ", s).strip()
 
 
+_SYN = {"STO": "STORE", "STOR": "STORE", "RM": "ROOM", "TOI": "TOILET", "WC": "TOILET", "ELE": "ELECTRICAL",
+        "ELEC": "ELECTRICAL", "COR": "CORRIDOR", "CORR": "CORRIDOR", "MEP": "MEP", "EQ": "EQUIPMENT",
+        "GAMES": "GAME", "ENTR": "ENTRANCE", "ENT": "ENTRANCE", "SERV": "SERVICE", "PR": "PUMP"}
+
+
 def name_core(s):
-    """Space name without tag codes ('&001-BD1-BF-HK STORE' -> 'HK STORE')."""
-    s = _NOISE.sub(" ", (s or "").upper().replace("&", " &"))
-    return norm(s)
+    """Space name without tag codes ('&001-BD1-BF-HK STORE' -> 'HK STORE'), abbreviations expanded."""
+    s = norm(_NOISE.sub(" ", (s or "").upper().replace("&", " &")))
+    return " ".join(_SYN.get(t, t) for t in s.split())
 
 
 def _ratio(a, b):
@@ -106,49 +111,45 @@ def _bld_name(name):
     return {g for g in m.groups() if g} if m else set()
 
 
-def match_vent(units, vent_spaces, threshold=0.75, topn=6):
-    """Match each FCU space to a vent space; unit result sums people / fresh air.
+def _area_sim(a, b):
+    if not a or not b:
+        return 0.0
+    return 1.0 - min(1.0, abs(a - b) / max(a, b))
 
-    A match is only taken automatically when it is unambiguous: exactly one vent
-    space has the best score and no other FCU space claims the same vent space.
-    Ambiguous spaces are listed so the reviewer can pick the right one.
 
-    -> per unit {'hits': [(space_name, vent_idx, score)], 'amb': [space_name],
-                 'cands': [(idx, score)], 'score'}
+def match_vent(units, vent_spaces, threshold=0.4, topn=8):
+    """Match every FCU space to its closest ventilation space.
+
+    Score = name similarity (+ building tag agreement, + area similarity as
+    tie-breaker). The best candidate at or above `threshold` is always used;
+    the reviewer can change it. Unit values later sum the distinct matches.
+
+    -> per unit {'hits': [(space_name, vent_idx, score)], 'cands': [(idx, score)], 'score'}
     """
     cores = [name_core(v.name) for v in vent_spaces]
     bld = [_bld_file(v.file) for v in vent_spaces]
-    claims = {}
-    raw = []
-    for ui, u in enumerate(units):
-        names = [s[0] for s in u.spaces] or [u.zone]
-        per = []
-        for nm in names:
-            core, nb = name_core(nm), _bld_name(nm)
-            scored = sorted(
-                ((vi, _ratio(core, c) + (0.02 if bld[vi] and bld[vi] in nb else 0.0)) for vi, c in enumerate(cores)),
-                key=lambda x: -x[1])
-            top = scored[:topn]
-            ok = [x for x in scored if x[1] >= threshold]
-            best = ok[0] if ok else None
-            tied = best is not None and len(ok) > 1 and abs(ok[1][1] - best[1]) < 1e-6
-            if best and not tied:
-                claims.setdefault(best[0], []).append(ui)
-            per.append((nm, best, tied, top))
-        raw.append(per)
     out = []
-    for ui, per in enumerate(raw):
-        hits, amb, allc = [], [], {}
-        for nm, best, tied, top in per:
-            for vi, s in top:
-                allc[vi] = max(s, allc.get(vi, 0))
-            if best is None:
-                continue
-            if tied or len(claims.get(best[0], [])) > 1:
-                amb.append(nm)
-            else:
-                hits.append((nm, best[0], min(best[1], 1.0)))
+    for u in units:
+        spaces = [(s[0], s[1]) for s in u.spaces] or [(u.zone, u.area)]
+        hits, allc, seen = [], {}, set()
+        for nm, area in spaces:
+            core, nb = name_core(nm), _bld_name(nm)
+            scored = []
+            for vi, c in enumerate(cores):
+                r = _ratio(core, c)
+                if r <= 0:
+                    continue
+                sc = r + 0.10 * _area_sim(area, vent_spaces[vi].area)
+                if nb and bld[vi]:
+                    sc += 0.1 if bld[vi] in nb else -0.1
+                scored.append((vi, sc))
+            scored.sort(key=lambda x: -x[1])
+            for vi, sc in scored[:topn]:
+                allc[vi] = max(sc, allc.get(vi, 0))
+            if scored and scored[0][1] >= threshold and scored[0][0] not in seen:
+                seen.add(scored[0][0])
+                hits.append((nm, scored[0][0], min(scored[0][1], 1.0)))
         cands = sorted(allc.items(), key=lambda x: -x[1])[:topn]
-        out.append({"hits": hits, "amb": amb, "cands": cands,
+        out.append({"hits": hits, "amb": [], "cands": cands,
                     "score": min((h[2] for h in hits), default=0.0)})
     return out

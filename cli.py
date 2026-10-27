@@ -19,7 +19,7 @@ def main(argv=None):
     ap = argparse.ArgumentParser(description="Merge FCU schedule, ventilation calculation and vendor report "
                                              "into the thermal load summary workbook.")
     ap.add_argument("--fcu", nargs="+", required=True, help="FCU schedule .xlsx (one or more)")
-    ap.add_argument("--vent", nargs="*", default=[], help="ventilation calculation .xlsx (one per building)")
+    ap.add_argument("--vent", nargs="+", required=True, help="ventilation calculation .xlsx (required; one per building)")
     ap.add_argument("--vendor", help="vendor deviation report (.xlsx/.xlsm/.pdf); optional")
     ap.add_argument("--vendor-sheet", help="sheet to read from the vendor workbook (default: plot 04 / first)")
     ap.add_argument("--pct", type=float, default=0, help="Second Selection: percentage change")
@@ -33,7 +33,7 @@ def main(argv=None):
     ap.add_argument("--plot"), ap.add_argument("--project"), ap.add_argument("--consultant")
     ap.add_argument("--keep-empty-rows", action="store_true", help="do not hide unused template rows")
     ap.add_argument("--vendor-min", type=float, default=0.8, help="minimum fuzzy score for automatic vendor match")
-    ap.add_argument("--vent-min", type=float, default=0.75, help="minimum fuzzy score for automatic vent match")
+    ap.add_argument("--vent-min", type=float, default=0.4, help="minimum score for the automatic vent match")
     ap.add_argument("-o", "--out", default="output/AC-Unit-Schedule.xlsx")
     a = ap.parse_args(argv)
 

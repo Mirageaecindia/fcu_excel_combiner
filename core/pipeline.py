@@ -25,12 +25,14 @@ def vendor_sheets(path):
 
 class Session:
     def __init__(self, fcu_paths, vent_paths=(), vendor_path=None, vendor_sheet=None,
-                 pdf_words=None, vendor_min=0.8, vent_min=0.75):
+                 pdf_words=None, vendor_min=0.8, vent_min=0.4):
         self.units = []
         for p in fcu_paths:
             self.units += fcu_parser.parse(p)
         if not self.units:
             raise ValueError("No FCU units found: the FCU schedule needs a header row with 'FCU Tag'.")
+        if not list(vent_paths):
+            raise ValueError("The ventilation calculation is required.")
         self.vent = []
         for p in vent_paths:
             self.vent += vent_parser.parse(p, os.path.basename(str(p)))
@@ -47,6 +49,11 @@ class Session:
                 self.vendor = vendor_excel.parse(vendor_path, self.vendor_sheet)
         self.vm = matcher.match_vendor(self.units, self.vendor, vendor_min) if self.vendor else None
         self.nm = matcher.match_vent(self.units, self.vent, vent_min) if self.vent else None
+
+    def _vlabel(self, vi):
+        v = self.vent[vi]
+        f = lambda x: "–" if x is None else f"{x:g}"
+        return f"{v.name} · {f(v.people)} people · {f(v.fresh_air)} L/s · {f(v.area)} m²"
 
     # ---- review table -------------------------------------------------
     def preview(self):
@@ -65,8 +72,8 @@ class Session:
                 n = self.nm[i]
                 r["vent"] = {
                     "amb": n["amb"],
-                    "hits": [{"space": h[0], "i": h[1], "s": round(h[2], 2), "label": self.vent[h[1]].name} for h in n["hits"]],
-                    "cands": [{"i": vi, "s": round(s, 2), "label": self.vent[vi].name} for vi, s in n["cands"]],
+                    "hits": [{"space": h[0], "i": h[1], "s": round(h[2], 2), "label": self._vlabel(h[1])} for h in n["hits"]],
+                    "cands": [{"i": vi, "s": round(s, 2), "label": self._vlabel(vi)} for vi, s in n["cands"]],
                 }
             rows.append(r)
         return {"units": rows, "vendor_count": len(self.vendor or []), "vent_count": len(self.vent),

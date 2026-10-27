@@ -21,7 +21,7 @@
       <input id="fcu" type="file" accept=".xlsx,.xlsm" multiple>
       <small>One or more workbooks with an “FCU Tag” header row.</small>
     </label>
-    <label class="field">Ventilation calculation <span class="opt">(optional)</span>
+    <label class="field">Ventilation calculation <b>(required)</b>
       <input id="vent" type="file" accept=".xlsx,.xlsm" multiple>
       <small>One file per building. Fills No. of People and Outdoor Air.</small>
     </label>
@@ -86,12 +86,9 @@
 
   <section class="card hidden" id="review">
     <h2>4 · Review matches</h2>
-    <p class="hint">Automatic matches are pre-selected. Yellow rows need a look: pick the right entry or “none”.
-      Blank values stay blank in the output.</p>
-    <div class="toolbar">
-      <span id="summary"></span>
-      <label class="inline"><input id="onlyReview" type="checkbox"> Show only rows needing review</label>
-    </div>
+    <p class="hint">Every unit is pre-filled with the closest match found. Check each row and change it from the
+      dropdown if it is wrong (“none” leaves the values blank).</p>
+    <div class="toolbar"><span id="summary"></span></div>
     <div class="tablewrap"><table id="table"></table></div>
     <div class="actions">
       <button id="generate" class="primary">Generate Excel</button>

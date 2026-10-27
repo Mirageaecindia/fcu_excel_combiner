@@ -66,8 +66,8 @@ async function extractPdfWords(file) {
 }
 
 function refreshButtons() {
-  const hasFcu = $("fcu").files.length > 0;
-  $("analyze").disabled = !(api && hasFcu);
+  const ready = $("fcu").files.length > 0 && $("vent").files.length > 0;
+  $("analyze").disabled = !(api && ready);
   $("fallbackBox").classList.toggle("hidden", $("vendor").files.length > 0);
 }
 
@@ -115,6 +115,7 @@ $("analyze").addEventListener("click", async () => {
   const st = $("status");
   $("review").classList.add("hidden");
   const hasVendor = $("vendor").files.length > 0;
+  if (!$("vent").files.length) { setStatus(st, "The ventilation calculation is required.", true); return; }
   if (!hasVendor && !(parseFloat($("qty").value) > 0)) { setStatus(st, "Enter the First Selection quantity (no vendor file).", true); return; }
   $("analyze").disabled = true;
   Object.keys(overridesState).forEach((k) => delete overridesState[k]);
@@ -131,7 +132,7 @@ $("analyze").addEventListener("click", async () => {
       } else { vendor = (await writeFiles($("vendor"), "vendor"))[0]; }
     }
     setStatus(st, "Parsing and matching… (can take a few seconds)"); await tick();
-    analysis = JSON.parse(api.analyze(fcu, vent, vendor, hasVendor ? $("vendorSheet").value : "", words, 0.8, 0.75));
+    analysis = JSON.parse(api.analyze(fcu, vent, vendor, hasVendor ? $("vendorSheet").value : "", words, 0.8, 0.4));
     renderReview();
     setStatus(st, `${analysis.units.length} units found.`);
   } catch (e) {
@@ -142,56 +143,45 @@ $("analyze").addEventListener("click", async () => {
 
 const fmt = (v, d = 2) => (v === null || v === undefined ? "–" : Number(v).toFixed(d).replace(/\.?0+$/, ""));
 
-function needsReview(u) {
-  if (u.vendor && (u.vendor.best === null || u.vendor.score < 1)) return true;
-  if (u.vent && u.vent.amb.length) return true;
-  return false;
-}
-
 function vendorCell(u) {
   if (!u.vendor) return "<td>–</td>";
   const v = u.vendor;
   let opts = `<option value="">${v.best === null ? "(no match)" : "auto: " + esc(label(v, v.best))}</option>`;
   for (const c of v.cands) opts += `<option value="${c.i}">${esc(c.label)} (${c.s})</option>`;
   opts += `<option value="-1">— none —</option>`;
-  const badge = v.best === null ? '<span class="badge">no match</span>' : v.score < 1 ? `<span class="badge">fuzzy ${v.score}</span>` : "";
-  return `<td><select data-u="${u.i}" data-k="vendor">${opts}</select>${badge}</td>`;
+  const note = v.best !== null && v.score < 1 ? `<span class="note">similarity ${v.score}</span>` : "";
+  return `<td><select data-u="${u.i}" data-k="vendor">${opts}</select>${note}</td>`;
 }
 const label = (v, i) => (v.cands.find((c) => c.i === i) || { label: "#" + i }).label;
 
 function ventCell(u) {
-  if (!u.vent) return "<td>–</td>";
   const v = u.vent;
-  const auto = v.hits.length ? "auto: " + v.hits.map((h) => h.label).join(", ") : "(blank)";
+  const auto = v.hits.length ? "auto: " + v.hits.map((h) => h.label).join(" + ") : "(no match)";
   let opts = `<option value="">${esc(auto)}</option>`;
   for (const c of v.cands) opts += `<option value="${c.i}">${esc(c.label)} (${c.s})</option>`;
   opts += `<option value="-1">— none —</option>`;
-  const badge = v.amb.length ? `<span class="badge">ambiguous: ${esc(v.amb.join(", ").slice(0, 60))}</span>` : "";
-  return `<td><select data-u="${u.i}" data-k="vent">${opts}</select>${badge}</td>`;
+  const note = v.hits.length && v.score < 1 ? `<span class="note">similarity ${v.score}</span>` : "";
+  return `<td><select data-u="${u.i}" data-k="vent">${opts}</select>${note}</td>`;
 }
 
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 
 function renderReview() {
-  const only = $("onlyReview").checked;
   const hasVendor = analysis.units.some((u) => u.vendor);
-  const hasVent = analysis.units.some((u) => u.vent);
   let head = "<tr><th>Unit</th><th>Location</th><th>Area</th><th>Calc kW</th><th>Flow L/s</th>";
   if (hasVendor) head += "<th>Vendor match</th>";
-  if (hasVent) head += "<th>Ventilation match</th>";
-  head += "</tr>";
-  let rows = "", nRev = 0;
+  head += "<th>Ventilation match</th></tr>";
+  let rows = "";
   for (const u of analysis.units) {
-    const rev = needsReview(u);
-    if (rev) nRev++;
-    if (only && !rev) continue;
-    rows += `<tr class="${rev ? "review" : ""}"><td>${esc(u.ref)}</td><td>${esc(u.zone)}</td>` +
+    rows += `<tr><td>${esc(u.ref)}</td><td>${esc(u.zone)}</td>` +
       `<td class="num">${fmt(u.area, 1)}</td><td class="num">${fmt(u.total)}</td><td class="num">${fmt(u.flow, 0)}</td>` +
-      (hasVendor ? vendorCell(u) : "") + (hasVent ? ventCell(u) : "") + "</tr>";
+      (hasVendor ? vendorCell(u) : "") + ventCell(u) + "</tr>";
   }
   $("table").innerHTML = head + rows;
-  $("summary").textContent = `${analysis.units.length} units · ${nRev} need review` +
-    (hasVendor ? ` · vendor rows: ${analysis.vendor_count}` : " · no vendor file") + (hasVent ? ` · vent spaces: ${analysis.vent_count}` : "");
+  const noVent = analysis.units.filter((u) => !u.vent.hits.length).length;
+  $("summary").textContent = `${analysis.units.length} units · vent spaces: ${analysis.vent_count}` +
+    (noVent ? ` · ${noVent} without ventilation match` : "") +
+    (hasVendor ? ` · vendor rows: ${analysis.vendor_count}` : " · no vendor file");
   $("review").classList.remove("hidden");
 }
 
@@ -202,15 +192,6 @@ $("table").addEventListener("change", (e) => {
   const o = (overridesState[s.dataset.u] = overridesState[s.dataset.u] || {});
   if (s.value === "") delete o[s.dataset.k]; else o[s.dataset.k] = parseInt(s.value, 10);
 });
-$("onlyReview").addEventListener("change", () => {
-  renderReview();
-  // restore selections after re-render
-  document.querySelectorAll("#table select").forEach((s) => {
-    const o = overridesState[s.dataset.u];
-    if (o && o[s.dataset.k] !== undefined) s.value = String(o[s.dataset.k]);
-  });
-});
-
 $("generate").addEventListener("click", async () => {
   const st = $("genStatus");
   $("generate").disabled = true;
