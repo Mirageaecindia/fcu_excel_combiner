@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FCU Excel Combiner</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header>
+  <h1>FCU Excel Combiner</h1>
+  <p>Merge the FCU schedule, ventilation calculation and vendor report into the
+     <em>Summary of Thermal Load Calculation</em> workbook. Everything runs in your browser; no file is uploaded.</p>
+  <div id="engine" class="pill">Loading Python engine…</div>
+</header>
+
+<main>
+  <section class="card">
+    <h2>1 · Source files</h2>
+    <label class="field">FCU schedule <b>(required)</b>
+      <input id="fcu" type="file" accept=".xlsx,.xlsm" multiple>
+      <small>One or more workbooks with an “FCU Tag” header row.</small>
+    </label>
+    <label class="field">Ventilation calculation <span class="opt">(optional)</span>
+      <input id="vent" type="file" accept=".xlsx,.xlsm" multiple>
+      <small>One file per building. Fills No. of People and Outdoor Air.</small>
+    </label>
+    <label class="field">Vendor report <span class="opt">(optional)</span>
+      <input id="vendor" type="file" accept=".xlsx,.xlsm,.pdf">
+      <small>Excel or PDF. Without it, First Selection is derived from the calculated load.</small>
+    </label>
+    <label class="field hidden" id="sheetRow">Vendor sheet
+      <select id="vendorSheet"></select>
+    </label>
+  </section>
+
+  <section class="card">
+    <h2>2 · Project header <span class="opt">(optional)</span></h2>
+    <div class="grid3">
+      <label class="field">Plot No.<input id="plot" type="text"></label>
+      <label class="field">Project<input id="project" type="text"></label>
+      <label class="field">Consultant<input id="consultant" type="text"></label>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>3 · Selections</h2>
+    <div id="fallbackBox" class="box">
+      <h3>First Selection <span class="opt">(no vendor file)</span></h3>
+      <p class="hint">Copied from Calculated AC Load, then changed by the percentage below.</p>
+      <div class="grid3">
+        <label class="field">Quantity (same on every row)<input id="qty" type="number" min="0" step="1" value="1"></label>
+        <label class="field">Percentage<input id="fbPct" type="number" min="0" step="0.1" value="0"></label>
+        <label class="field">Direction
+          <select id="fbDir"><option value="increase" selected>Increase</option><option value="decrease">Decrease</option></select>
+        </label>
+      </div>
+      <div class="checks" id="fbApply">
+        <label><input type="checkbox" value="total" checked> Total kW</label>
+        <label><input type="checkbox" value="sensible" checked> Sensible kW</label>
+        <label><input type="checkbox" value="flow" checked> Flow rate</label>
+      </div>
+    </div>
+    <div class="box">
+      <h3>Second Selection</h3>
+      <p class="hint">First Selection changed by the percentage. Quantity is always copied unchanged.</p>
+      <div class="grid3">
+        <label class="field">Percentage<input id="pct" type="number" min="0" step="0.1" value="0"></label>
+        <label class="field">Direction
+          <select id="dir"><option value="increase" selected>Increase</option><option value="decrease">Decrease</option></select>
+        </label>
+      </div>
+      <div class="checks" id="apply">
+        <label><input type="checkbox" value="total" checked> Total kW</label>
+        <label><input type="checkbox" value="sensible" checked> Sensible kW</label>
+        <label><input type="checkbox" value="flow" checked> Flow rate</label>
+        <label><input type="checkbox" value="power" checked> Electric power</label>
+      </div>
+    </div>
+    <label class="inline"><input id="hideEmpty" type="checkbox" checked> Hide unused rows in the output</label>
+    <div class="actions">
+      <button id="analyze" class="primary" disabled>Analyze files</button>
+      <span id="status" class="status"></span>
+    </div>
+  </section>
+
+  <section class="card hidden" id="review">
+    <h2>4 · Review matches</h2>
+    <p class="hint">Automatic matches are pre-selected. Yellow rows need a look: pick the right entry or “none”.
+      Blank values stay blank in the output.</p>
+    <div class="toolbar">
+      <span id="summary"></span>
+      <label class="inline"><input id="onlyReview" type="checkbox"> Show only rows needing review</label>
+    </div>
+    <div class="tablewrap"><table id="table"></table></div>
+    <div class="actions">
+      <button id="generate" class="primary">Generate Excel</button>
+      <span id="genStatus" class="status"></span>
+    </div>
+    <ul id="warnings" class="warnings"></ul>
+  </section>
+</main>
+
+<footer>Output keeps the reference format: rows 1–12 stay locked, data rows are editable.
+  The sheet password is the one of the reference file.</footer>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script src="https://cdn.jsdelivr.net/pyodide/v0.26.4/full/pyodide.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
