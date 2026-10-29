@@ -1,4 +1,4 @@
-# FCU Excel Combiner
+# DM_extrator
 
 Merges **FCU schedule(s)**, a **people report** (HAP *Space Input Data* PDFs) and an optional **vendor deviation report**
 (xlsx/xlsm/pdf) into the *Summary of Thermal Load Calculation* workbook. The reference file is the template, so logos,
