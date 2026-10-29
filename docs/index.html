@@ -9,29 +9,64 @@
 <body>
 <header class="topbar"><div class="inner">
   <h1>FCU Excel <span>Combiner</span></h1>
-  <p>Merge the FCU schedule, ventilation calculation and vendor report into the
+  <p>Merge the FCU schedule, people report and vendor report into the
      <em>Summary of Thermal Load Calculation</em> workbook. Everything runs in your browser; no file is uploaded.</p>
   <div id="engine" class="pill">Loading Python engine…</div>
 </div></header>
 
 <main>
+  <section class="prereq" aria-label="Prerequisites">
+    <h2>Prerequisites</h2>
+    <ul>
+      <li><b>FCU schedule:</b> the <b>FCU Tag</b> column must be filled on the first row of every unit. A row with an
+        empty FCU Tag is treated as a sub part of the tag above it: its area and air flow are added to that unit
+        (e.g. FCU-03 with sub rows 124 + 11 L/s becomes one unit with 135 L/s). The Units Reference column is the FCU Tag.</li>
+      <li><b>No. of People:</b> upload the HAP <b>Space Input Data</b> PDF(s). The <i>Occupancy</i> value under each space
+        (2.4 People) is used. Without a PDF you can enter a default value or leave the column empty.</li>
+      <li><b>Outdoor Air</b> is always left empty.</li>
+    </ul>
+  </section>
+
   <section class="card">
     <h2>1 · Source files</h2>
-    <label class="field">FCU schedule <b>(required)</b>
-      <input id="fcu" type="file" accept=".xlsx,.xlsm" multiple>
-      <small>One or more workbooks with an “FCU Tag” header row.</small>
-    </label>
-    <label class="field">Ventilation calculation <b>(required)</b>
-      <input id="vent" type="file" accept=".xlsx,.xlsm" multiple>
-      <small>One file per building. Fills No. of People and Outdoor Air.</small>
-    </label>
-    <label class="field">Vendor report <span class="opt">(optional)</span>
-      <input id="vendor" type="file" accept=".xlsx,.xlsm,.pdf">
-      <small>Excel or PDF. Without it, First Selection is derived from the calculated load.</small>
-    </label>
-    <label class="field hidden" id="sheetRow">Vendor sheet
-      <select id="vendorSheet"></select>
-    </label>
+    <p class="hint">Each input accepts several files: use <b>Add files</b> as often as needed and remove any with ×.</p>
+
+    <div class="group" data-kind="fcu">
+      <div class="ghead"><span class="glabel">FCU schedule <b>(required)</b></span>
+        <button type="button" class="add">Add files</button></div>
+      <input type="file" class="picker" accept=".xlsx,.xlsm" multiple hidden>
+      <ul class="files"></ul>
+      <small>Workbooks with an “FCU Tag” header row.</small>
+    </div>
+
+    <div class="group" data-kind="people">
+      <div class="ghead"><span class="glabel">People report – HAP Space Input Data PDF <span class="opt">(optional)</span></span>
+        <button type="button" class="add">Add files</button></div>
+      <input type="file" class="picker" accept=".pdf" multiple hidden>
+      <ul class="files"></ul>
+      <div class="box people">
+        <h3>No. of People when no value is found</h3>
+        <label class="inline"><input type="radio" name="pdef" value="empty" checked> Leave empty</label>
+        <label class="inline"><input type="radio" name="pdef" value="value"> Use this value for every row without a match:</label>
+        <input id="pdefVal" type="number" min="0" step="1" value="1" disabled>
+      </div>
+    </div>
+
+    <div class="group" data-kind="vendor">
+      <div class="ghead"><span class="glabel">Vendor report <span class="opt">(optional)</span></span>
+        <button type="button" class="add">Add files</button></div>
+      <input type="file" class="picker" accept=".xlsx,.xlsm,.pdf" multiple hidden>
+      <ul class="files"></ul>
+      <small>Excel (choose the sheet per file) and/or PDF. Without it, First Selection is derived from the calculated load.</small>
+    </div>
+
+    <div class="group" data-kind="vent">
+      <div class="ghead"><span class="glabel">Ventilation calculation <span class="opt">(optional – fallback for No. of People)</span></span>
+        <button type="button" class="add">Add files</button></div>
+      <input type="file" class="picker" accept=".xlsx,.xlsm" multiple hidden>
+      <ul class="files"></ul>
+      <small>Used only for spaces that have no match in the people PDF.</small>
+    </div>
   </section>
 
   <section class="card">
@@ -89,6 +124,7 @@
     <p class="hint">Every unit is pre-filled with the closest match found and highlighted until you review it.
       Change the match from the dropdown if it is wrong (“none” leaves the values blank), or tick the box
       at the start of the row to confirm it. Changing a dropdown also marks the row as reviewed.</p>
+    <ul id="fcuWarnings" class="notice hidden"></ul>
     <div class="toolbar"><span id="summary"></span></div>
     <div class="tablewrap"><table id="table"></table></div>
     <div class="actions">

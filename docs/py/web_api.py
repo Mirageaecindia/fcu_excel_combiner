@@ -12,12 +12,12 @@ def vendor_sheets(path):
     return json.dumps({"sheets": names, "default": vendor_excel.default_sheet(names)})
 
 
-def analyze(fcu, vent, vendor, sheet, pdf_words_json, vendor_min, vent_min):
+def analyze(fcu, vent, vendor_json, people_json, vendor_min, people_min):
+    """vendor_json: [{"path","sheet"} | {"words","name"}], people_json: [{"path"} | {"pages","name"}]."""
     global _session
-    words = json.loads(pdf_words_json) if pdf_words_json else None
     _session = pipeline.Session(
-        list(fcu), list(vent), None if words else (vendor or None), sheet or None,
-        pdf_words=words, vendor_min=float(vendor_min), vent_min=float(vent_min))
+        list(fcu), list(vent), json.loads(vendor_json), json.loads(people_json),
+        vendor_min=float(vendor_min), people_min=float(people_min))
     return json.dumps(_session.preview())
 
 

@@ -1,4 +1,8 @@
-"""Command line front end:  python cli.py --fcu F.xlsx --vent V1.xlsx V2.xlsx [--vendor D.xlsm|D.pdf]"""
+"""Command line front end.
+
+    python cli.py --fcu F.xlsx [F2.xlsx ...] [--vendor D.xlsm::"plot 04" D2.pdf ...]
+                  [--people-pdf HAP.pdf ...] [--vent V.xlsx ...] [--default-people 2]
+"""
 import argparse
 import sys
 from pathlib import Path
@@ -16,12 +20,14 @@ def _apply(s):
 
 
 def main(argv=None):
-    ap = argparse.ArgumentParser(description="Merge FCU schedule, ventilation calculation and vendor report "
+    ap = argparse.ArgumentParser(description="Merge FCU schedule, people report and vendor report "
                                              "into the thermal load summary workbook.")
-    ap.add_argument("--fcu", nargs="+", required=True, help="FCU schedule .xlsx (one or more)")
-    ap.add_argument("--vent", nargs="+", required=True, help="ventilation calculation .xlsx (required; one per building)")
-    ap.add_argument("--vendor", help="vendor deviation report (.xlsx/.xlsm/.pdf); optional")
-    ap.add_argument("--vendor-sheet", help="sheet to read from the vendor workbook (default: plot 04 / first)")
+    ap.add_argument("--fcu", nargs="+", required=True, help="FCU schedule .xlsx (one or more; FCU Tag must be filled)")
+    ap.add_argument("--people-pdf", nargs="*", default=[], help="HAP 'Space Input Data' PDF(s): No. of People per space")
+    ap.add_argument("--default-people", type=float, help="No. of People for rows without a match (omit = leave empty)")
+    ap.add_argument("--vent", nargs="*", default=[], help="optional ventilation calculation .xlsx (people fallback)")
+    ap.add_argument("--vendor", nargs="*", default=[],
+                    help="vendor deviation report(s): .xlsx/.xlsm (optionally file::sheet) or .pdf")
     ap.add_argument("--pct", type=float, default=0, help="Second Selection: percentage change")
     ap.add_argument("--dir", choices=["increase", "decrease"], default="increase")
     ap.add_argument("--apply", type=_apply, default=_apply(",".join(FIELDS)),
@@ -33,17 +39,17 @@ def main(argv=None):
     ap.add_argument("--plot"), ap.add_argument("--project"), ap.add_argument("--consultant")
     ap.add_argument("--keep-empty-rows", action="store_true", help="do not hide unused template rows")
     ap.add_argument("--vendor-min", type=float, default=0.8, help="minimum fuzzy score for automatic vendor match")
-    ap.add_argument("--vent-min", type=float, default=0.4, help="minimum score for the automatic vent match")
+    ap.add_argument("--people-min", type=float, default=0.4, help="minimum score for the ventilation fallback match")
     ap.add_argument("-o", "--out", default="output/AC-Unit-Schedule.xlsx")
     a = ap.parse_args(argv)
 
     if not a.vendor and a.qty is None:
         ap.error("without --vendor you must give --qty (First Selection quantity)")
-    s = Session(a.fcu, a.vent, a.vendor, a.vendor_sheet, vendor_min=a.vendor_min, vent_min=a.vent_min)
+    s = Session(a.fcu, a.vent, a.vendor, a.people_pdf, vendor_min=a.vendor_min, people_min=a.people_min)
     options = {
         "pct": a.pct, "direction": a.dir, "apply_to": a.apply,
         "fallback_pct": a.fallback_pct, "fallback_direction": a.fallback_dir,
-        "fallback_apply_to": a.fallback_apply, "qty": a.qty,
+        "fallback_apply_to": a.fallback_apply, "qty": a.qty, "people_default": a.default_people,
         "header": {"plot": a.plot, "project": a.project, "consultant": a.consultant},
         "hide_empty": not a.keep_empty_rows,
     }
@@ -51,9 +57,9 @@ def main(argv=None):
     out = Path(a.out)
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_bytes(data)
-    print(f"{len(s.units)} units, {len(s.vent)} vent spaces, "
+    print(f"{len(s.units)} units, {len(s.pdf_people)} HAP spaces, {len(s.vent)} vent spaces, "
           f"{len(s.vendor) if s.vendor else 0} vendor rows -> {out}")
-    for w in warnings:
+    for w in s.fcu_warnings + warnings:
         print("warning:", w, file=sys.stderr)
     return 0
 

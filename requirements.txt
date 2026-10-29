@@ -1,3 +1,4 @@
 openpyxl>=3.1
-pdfplumber>=0.11   # CLI only: vendor PDF text extraction (the browser uses pdf.js)
+pdfplumber>=0.11   # CLI only: PDF text extraction (the browser uses pdf.js)
+pymupdf            # CLI only: fast PDF text for large people reports (optional)
 pytest

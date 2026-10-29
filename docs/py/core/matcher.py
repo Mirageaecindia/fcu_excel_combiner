@@ -68,7 +68,7 @@ def match_vendor(units, vendor_rows, threshold=0.6, topn=5):
             exact.setdefault(n, []).append(vi)
     cand = []
     for u in units:
-        ukeys = [(norm(k), _code(k)) for k in dict.fromkeys([u.zone, u.tag]) if k]
+        ukeys = [(norm(k), _code(k)) for k in dict.fromkeys(u.keys[:4]) if k]
         hits = {vi: 1.0 for n, _ in ukeys for vi in exact.get(n, ())}
         if hits:
             scored = list(hits.items())
@@ -152,4 +152,60 @@ def match_vent(units, vent_spaces, threshold=0.4, topn=8):
         cands = sorted(allc.items(), key=lambda x: -x[1])[:topn]
         out.append({"hits": hits, "amb": [], "cands": cands,
                     "score": min((h[2] for h in hits), default=0.0)})
+    return out
+
+
+_CODE_ANY = re.compile(r"^\W*(\d+)")
+
+
+def _ident(name):
+    """-> (code number or None, set of building numbers) of '&001-BD1-BF-HK STORE' / '#001-BD1-B-Pump Room'."""
+    m = _CODE_ANY.match(name or "")
+    return (int(m.group(1)) if m else None), _bld_name(name)
+
+
+def match_people(units, pdf_spaces, vent_spaces, vent_threshold=0.4, topn=8):
+    """Find the people source of every FCU sub space.
+
+    HAP PDF spaces are matched by code number (+ building) and ranked by area and
+    name similarity; sub spaces without a PDF hit fall back to the ventilation
+    calculation (fuzzy name). Indexes address the combined list pdf_spaces + vent_spaces.
+
+    -> per unit {'hits': [(space_name, idx, score)], 'cands': [(idx, score)]}
+    """
+    by_code = {}
+    for pi, sp in enumerate(pdf_spaces):
+        by_code.setdefault(_ident(sp.name)[0], []).append(pi)
+    pdf_cores = [name_core(sp.name) for sp in pdf_spaces]
+    vm = match_vent(units, vent_spaces, vent_threshold, topn) if vent_spaces else None
+    off = len(pdf_spaces)
+    out = []
+    for ui, u in enumerate(units):
+        spaces = [(s[0], s[1]) for s in u.spaces] or [(u.zone, u.area)]
+        hits, cands, seen = [], {}, set()
+        vhits = {h[0]: h for h in (vm[ui]["hits"] if vm else [])}
+        for nm, area in spaces:
+            code, nb = _ident(nm)
+            scored = []
+            for pi in by_code.get(code, []) if code is not None else []:
+                sp = pdf_spaces[pi]
+                sb = _ident(sp.name)[1]
+                if nb and sb and not (nb & sb):
+                    continue
+                sc = 0.4 + 0.3 * _area_sim(area, sp.area) + 0.3 * _ratio(name_core(nm), pdf_cores[pi])
+                scored.append((pi, min(sc, 1.0)))
+            scored.sort(key=lambda x: -x[1])
+            for pi, sc in scored[:topn]:
+                cands[pi] = max(sc, cands.get(pi, 0))
+            if scored and scored[0][0] not in seen:
+                seen.add(scored[0][0])
+                hits.append((nm, scored[0][0], scored[0][1]))
+            elif not scored and nm in vhits and (off + vhits[nm][1]) not in seen:
+                vi = vhits[nm][1]
+                seen.add(off + vi)
+                hits.append((nm, off + vi, vhits[nm][2]))
+        if vm:
+            for vi, sc in vm[ui]["cands"]:
+                cands[off + vi] = max(sc * 0.99, cands.get(off + vi, 0))
+        out.append({"hits": hits, "cands": sorted(cands.items(), key=lambda x: -x[1])[: topn + 4]})
     return out
